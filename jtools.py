@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import argparse, subprocess, io, os, threading
 
 __all__ = ['parse_args', 'popen', 'stdio']
