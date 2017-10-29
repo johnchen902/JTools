@@ -1,7 +1,7 @@
 Sample usage:
 
 ```
-#!/usr/bin/python3
+#!/usr/bin/env python3
 import asyncio
 import sys
 import jtools
@@ -9,10 +9,7 @@ import jtools
 args = jtools.create_argument_parser().parse_args()
 
 async def main():
-    r, w = await asyncio.open_connection(args.host, args.port)
-    if args.verbose:
-        r = jtools.ColorEchoStreamReader(r, data_color='light_green')
-        w = jtools.ColorEchoStreamWriter(w, data_color='light_red')
+    r, w = await jtools.open_connection(args)
     # ...
     print(*jtools.find_flags(await r.read()))
 

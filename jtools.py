@@ -4,6 +4,7 @@
 __all__ = [
     'create_argument_parser',
     'find_flags',
+    'open_connection',
     'EchoStreamReader',
     'EchoStreamWriter',
     'ColorEchoStreamReader',
@@ -23,11 +24,43 @@ def create_argument_parser(**kwargs):
     Arguments are directly forwarded to argparse.ArgumentParser.
     """
     parser = argparse.ArgumentParser(**kwargs)
-    parser.add_argument(
-        '-v', '--verbose', action='store_true', help='log data sent/received')
     parser.add_argument('host')
     parser.add_argument('port', type=int)
+    parser.add_argument(
+        '-v', '--verbose', action='store_true',
+        help='log data sent and received')
+    parser.add_argument(
+        '--color', metavar='WHEN', choices=['always', 'auto', 'never'],
+        nargs='?', default='never', const='always',
+        help="""colorize the output;
+                WHEN can be 'always' (default if omitted), 'auto', or 'never'""")
     return parser
+
+def should_colorize(args):
+    """Determine if we should colorize the output"""
+    if args.color == 'always':
+        return True
+    if args.color == 'never':
+        return False
+    if args.color == 'auto':
+        return sys.stdout.isatty()
+    raise ValueError('Bad args.color')
+
+async def open_connection(args):
+    """Open a connection described by args.
+
+    Returns a (reader, writer) pair decorated as described by args.
+    """
+    reader, writer = await asyncio.open_connection(args.host, args.port)
+    if args.verbose:
+        if should_colorize(args):
+            # TODO Configure color.
+            reader = ColorEchoStreamReader(reader, data_color='light_green')
+            writer = ColorEchoStreamWriter(writer, data_color='light_red')
+        else:
+            reader = EchoStreamReader(reader)
+            writer = EchoStreamWriter(writer)
+    return reader, writer
 
 def find_flags(flagdata):
     """Returns flags of form FLAG{[^}]+} found in flagdata."""
