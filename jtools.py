@@ -108,9 +108,11 @@ class EchoStreamReader:
     def echo_function(self, funcname, *args, **kwargs):
         """Record the function name and argument being called."""
         self._output.write('%s = ' % format_function_call(funcname, *args, **kwargs))
+        self._output.flush()
     def echo_data(self, data):
         """Record return value."""
         self._output.write('%r\n' % data)
+        self._output.flush()
 
 class EchoStreamWriter:
     """Wrapper around asyncio.StreamWriter recording write* calls."""
@@ -137,6 +139,7 @@ class EchoStreamWriter:
     def echo_function(self, attr, *args, **kwargs):
         """Record the function name and argument being called."""
         self._output.write('%s\n' % format_function_call(attr, *args, **kwargs))
+        self._output.flush()
 
 class ColorEchoStreamReader(EchoStreamReader):
     """An EchoStreamReader that add colors."""
@@ -156,11 +159,13 @@ class ColorEchoStreamReader(EchoStreamReader):
         if self._header_color is not None:
             funccall = colored.stylize(funccall, colored.fg(self._header_color))
         self._output.write('%s = ' % funccall)
+        self._output.flush()
     def echo_data(self, data):
         data = repr(data)
         if self._data_color is not None:
             data = colored.stylize(data, colored.fg(self._data_color))
         self._output.write('%s\n' % data)
+        self._output.flush()
 
 class ColorEchoStreamWriter(EchoStreamWriter):
     """An EchoStreamWriter that add colors."""
@@ -182,3 +187,4 @@ class ColorEchoStreamWriter(EchoStreamWriter):
             colored_arg0 = colored.stylize(args[0], colored.fg(self._data_color))
             args = (colored_arg0,) + args[1:]
         self._output.write('%s\n' % format_function_call(attr, *args, **kwargs))
+        self._output.flush()
