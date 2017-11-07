@@ -9,10 +9,12 @@ __all__ = [
     'EchoStreamWriter',
     'ColorEchoStreamReader',
     'ColorEchoStreamWriter',
+    'OffsetDict',
 ]
 
 import argparse
 import asyncio
+import collections
 import itertools
 import re
 import sys
@@ -188,3 +190,39 @@ class ColorEchoStreamWriter(EchoStreamWriter):
             args = (colored_arg0,) + args[1:]
         self._output.write('%s\n' % format_function_call(attr, *args, **kwargs))
         self._output.flush()
+
+class OffsetDict(collections.MutableMapping):
+    """A mutable mapping of which values have fixed offsets.
+
+    When modifying value of an existing key,
+    the base will be modified instead.
+    """
+
+    __slots__ = ('_base', '_dict')
+
+    def __init__(self, *args, _base=None, **kwargs):
+        self._base = _base
+        self._dict = dict(*args, **kwargs)
+
+    def __len__(self):
+        return len(self._dict)
+
+    def __iter__(self):
+        return iter(self._dict)
+
+    def __getitem__(self, key):
+        value = self._dict[key]
+        if self._base is None:
+            return value
+        return self._base + value
+
+    def __setitem__(self, key, value):
+        if key in self._dict:
+            self._base = value - self._dict[key]
+        elif self._base is None:
+            self._dict[key] = value
+        else:
+            self._dict[key] = value - self._base
+
+    def __delitem__(self, key):
+        del self._dict[key]
