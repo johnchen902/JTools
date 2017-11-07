@@ -5,6 +5,7 @@ __all__ = [
     'create_argument_parser',
     'find_flags',
     'open_connection',
+    'Connection',
     'EchoStreamReader',
     'EchoStreamWriter',
     'ColorEchoStreamReader',
@@ -51,7 +52,11 @@ def should_colorize(args):
 async def open_connection(args):
     """Open a connection described by args.
 
-    Returns a (reader, writer) pair decorated as described by args.
+    Returns a Connection decorated according to args.
+    Such connection is not exactly a (reader, writer) pair,
+    but can be used as:
+
+    >>> reader, writer = await open_connection(args)
     """
     reader, writer = await asyncio.open_connection(args.host, args.port)
     if args.verbose:
@@ -62,7 +67,7 @@ async def open_connection(args):
         else:
             reader = EchoStreamReader(reader)
             writer = EchoStreamWriter(writer)
-    return reader, writer
+    return Connection(reader, writer)
 
 def find_flags(flagdata):
     """Returns flags of form FLAG{[^}]+} found in flagdata."""
@@ -75,6 +80,36 @@ def format_function_call(name, *args, **kwargs):
     return '%s(%s)' % (name, ', '.join(
         itertools.chain((str(a) for a in args),
                         ('%s=%s' % i for i in kwargs.items()))))
+
+class Connection:
+    """A wrapper of plain (reader, writer) pair"""
+    def __init__(self, reader, writer):
+        self.reader = reader
+        self.writer = writer
+    def __iter__(self):
+        yield self.reader
+        yield self.writer
+    async def read(self, n=-1):
+        """See `asyncio.StreamerReader.read`"""
+        return await self.reader.read(n)
+    async def readline(self):
+        """See `asyncio.StreamerReader.readline`"""
+        return await self.reader.readline()
+    async def readexactly(self, n):
+        """See `asyncio.StreamerReader.readexactly`"""
+        return await self.reader.readexactly(n)
+    async def readuntil(self, separator=b'\n'):
+        """See `asyncio.StreamerReader.readuntil`"""
+        return await self.reader.readuntil(separator)
+    def write(self, data):
+        """See `asyncio.StreamerWriter.write`"""
+        self.writer.write(data)
+    def writelines(self, data):
+        """See `asyncio.StreamerWriter.writelines`"""
+        self.writer.writelines(data)
+    def write_eof(self):
+        """See `asyncio.StreamerWriter.write_eof`"""
+        self.writer.write_eof()
 
 class EchoStreamReader:
     """Wrapper around asyncio.StreamReader recording read* calls."""
