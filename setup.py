@@ -1,11 +1,9 @@
 from setuptools import setup, find_packages
 setup(
     name="JTools",
-    version="0.3.0",
+    version="0.3.1",
     py_modules=['jtools'],
-    install_requires=[
-        'colored',
-    ],
+    install_requires=[],
     zip_safe=True,
 
     author = "John Chen",

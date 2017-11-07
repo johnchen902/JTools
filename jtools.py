@@ -4,22 +4,19 @@
 __all__ = [
     'create_argument_parser',
     'find_flags',
+    'create_logger',
     'open_connection',
     'Connection',
-    'EchoStreamReader',
-    'EchoStreamWriter',
-    'ColorEchoStreamReader',
-    'ColorEchoStreamWriter',
     'OffsetDict',
 ]
 
 import argparse
 import asyncio
 import collections
-import itertools
+import logging
 import re
 import sys
-import colored
+import types
 
 def create_argument_parser(**kwargs):
     """Create an argparse.ArgumentParser whose result can be used by jtools.
@@ -49,7 +46,34 @@ def should_colorize(args):
         return sys.stdout.isatty()
     raise ValueError('Bad args.color')
 
-async def open_connection(args):
+REGEX_READ = re.compile('(read.* = )%s')
+REGEX_WRITE = re.compile(r'(write.*)\((.+)\)')
+def msg_color_filter(msg):
+    """filter supporting --color (str to str)"""
+    match = REGEX_READ.fullmatch(msg)
+    if match:
+        # TODO config colors
+        return match.expand('\\1\033[38;5;10m%s\033[0m')
+    match = REGEX_WRITE.fullmatch(msg)
+    if match:
+        return match.expand('\\1(\033[38;5;9m\\2\033[0m)')
+    return msg
+def color_filter(record):
+    """filter supporting --color (logging interface)"""
+    record.msg = msg_color_filter(str(record.msg))
+    return True
+
+def create_logger(args, name):
+    """Create a logger with specified name, and configure it according to args"""
+    logger = logging.getLogger(name)
+    if args.verbose:
+        logger.setLevel(logging.DEBUG)
+    logger.addHandler(logging.StreamHandler())
+    if should_colorize(args):
+        logger.addFilter(color_filter)
+    return logger
+
+async def open_connection(args, logger=None):
     """Open a connection described by args.
 
     Returns a Connection decorated according to args.
@@ -58,16 +82,12 @@ async def open_connection(args):
 
     >>> reader, writer = await open_connection(args)
     """
+
+    if logger is None:
+        logger = types.SimpleNamespace(debug=lambda *args, **kwargs: None)
+
     reader, writer = await asyncio.open_connection(args.host, args.port)
-    if args.verbose:
-        if should_colorize(args):
-            # TODO Configure color.
-            reader = ColorEchoStreamReader(reader, data_color='light_green')
-            writer = ColorEchoStreamWriter(writer, data_color='light_red')
-        else:
-            reader = EchoStreamReader(reader)
-            writer = EchoStreamWriter(writer)
-    return Connection(reader, writer)
+    return Connection(reader, writer, logger)
 
 def find_flags(flagdata):
     """Returns flags of form FLAG{[^}]+} found in flagdata."""
@@ -75,156 +95,48 @@ def find_flags(flagdata):
         return re.findall(b'FLAG{[^}]+}', flagdata)
     return re.findall('FLAG{[^}]+}', str(flagdata))
 
-def format_function_call(name, *args, **kwargs):
-    """Returns name(arg0, ..., kw0=kwarg0, ...)"""
-    return '%s(%s)' % (name, ', '.join(
-        itertools.chain((str(a) for a in args),
-                        ('%s=%s' % i for i in kwargs.items()))))
-
 class Connection:
-    """A wrapper of plain (reader, writer) pair"""
-    def __init__(self, reader, writer):
+    """Returned by open_connection."""
+    def __init__(self, reader, writer, logger):
+        """Don't call it directly."""
         self.reader = reader
         self.writer = writer
+        self.logger = logger
     def __iter__(self):
         yield self.reader
         yield self.writer
     async def read(self, n=-1):
         """See `asyncio.StreamerReader.read`"""
-        return await self.reader.read(n)
+        result = await self.reader.read(n)
+        self.logger.debug('read(%d) = %s', n, result)
+        return result
     async def readline(self):
         """See `asyncio.StreamerReader.readline`"""
-        return await self.reader.readline()
+        result = await self.reader.readline()
+        self.logger.debug('readline() = %s', result)
+        return result
     async def readexactly(self, n):
         """See `asyncio.StreamerReader.readexactly`"""
-        return await self.reader.readexactly(n)
+        result = await self.reader.readexactly(n)
+        self.logger.debug('readexactly(%d) = %d', n, result)
+        return result
     async def readuntil(self, separator=b'\n'):
         """See `asyncio.StreamerReader.readuntil`"""
-        return await self.reader.readuntil(separator)
+        result = await self.reader.readuntil(separator)
+        self.logger.debug('readuntil(%s) = %s', separator, result)
+        return result
     def write(self, data):
         """See `asyncio.StreamerWriter.write`"""
+        self.logger.debug('write(%s)', data)
         self.writer.write(data)
     def writelines(self, data):
         """See `asyncio.StreamerWriter.writelines`"""
+        self.logger.debug('writelines(%s)', data)
         self.writer.writelines(data)
     def write_eof(self):
         """See `asyncio.StreamerWriter.write_eof`"""
+        self.logger.debug('write_eof()')
         self.writer.write_eof()
-
-class EchoStreamReader:
-    """Wrapper around asyncio.StreamReader recording read* calls."""
-    def __init__(self, reader, output=sys.stdout):
-        """
-        Arguments:
-            - reader -- wrapped asyncio.StreamReader
-            - output -- stream to echo to (default: sys.stdout)
-        """
-        self._reader = reader
-        self._output = output
-    def __getattr__(self, attr):
-        orig_attr = self._reader.__getattribute__(attr)
-        if callable(orig_attr) and self.is_read_function(attr):
-            if asyncio.iscoroutinefunction(orig_attr):
-                async def _hooked_coroutine(*args, **kwargs):
-                    self.echo_function(attr, *args, **kwargs)
-                    result = await orig_attr(*args, **kwargs)
-                    self.echo_data(result)
-                    return result
-                return _hooked_coroutine
-            def _hooked(*args, **kwargs):
-                self.echo_function(attr, *args, **kwargs)
-                result = orig_attr(*args, **kwargs)
-                self.echo_data(result)
-                return result
-            return _hooked
-        return orig_attr
-    @staticmethod
-    def is_read_function(funcname):
-        """Returns true if funcname is a read* and thus should be recorded."""
-        return funcname.startswith('read')
-    def echo_function(self, funcname, *args, **kwargs):
-        """Record the function name and argument being called."""
-        self._output.write('%s = ' % format_function_call(funcname, *args, **kwargs))
-        self._output.flush()
-    def echo_data(self, data):
-        """Record return value."""
-        self._output.write('%r\n' % data)
-        self._output.flush()
-
-class EchoStreamWriter:
-    """Wrapper around asyncio.StreamWriter recording write* calls."""
-    def __init__(self, writer, output=sys.stdout):
-        self._writer = writer
-        self._output = output
-    def __getattr__(self, attr):
-        orig_attr = self._writer.__getattribute__(attr)
-        if callable(orig_attr) and self.is_write_attr(attr):
-            if asyncio.iscoroutinefunction(orig_attr):
-                async def _hooked_coroutine(*args, **kwargs):
-                    self.echo_function(attr, *args, **kwargs)
-                    return await orig_attr(*args, **kwargs)
-                return _hooked_coroutine
-            def _hooked(*args, **kwargs):
-                self.echo_function(attr, *args, **kwargs)
-                return orig_attr(*args, **kwargs)
-            return _hooked
-        return orig_attr
-    @staticmethod
-    def is_write_attr(attr):
-        """Returns true if funcname is a write* and thus should be recorded."""
-        return attr.startswith('write')
-    def echo_function(self, attr, *args, **kwargs):
-        """Record the function name and argument being called."""
-        self._output.write('%s\n' % format_function_call(attr, *args, **kwargs))
-        self._output.flush()
-
-class ColorEchoStreamReader(EchoStreamReader):
-    """An EchoStreamReader that add colors."""
-    def __init__(self, reader, output=sys.stdout, header_color=None, data_color=None):
-        """
-        Arguments:
-            - reader -- wrapped asyncio.StreamReader
-            - output -- stream to echo to (default: sys.stdout)
-            - header_color -- colored.fg compatible color
-            - data_color -- colored.fg compatible color
-        """
-        super().__init__(reader, output)
-        self._header_color = header_color
-        self._data_color = data_color
-    def echo_function(self, funcname, *args, **kwargs):
-        funccall = format_function_call(funcname, *args, **kwargs)
-        if self._header_color is not None:
-            funccall = colored.stylize(funccall, colored.fg(self._header_color))
-        self._output.write('%s = ' % funccall)
-        self._output.flush()
-    def echo_data(self, data):
-        data = repr(data)
-        if self._data_color is not None:
-            data = colored.stylize(data, colored.fg(self._data_color))
-        self._output.write('%s\n' % data)
-        self._output.flush()
-
-class ColorEchoStreamWriter(EchoStreamWriter):
-    """An EchoStreamWriter that add colors."""
-    def __init__(self, writer, output=sys.stdout, header_color=None, data_color=None):
-        """
-        Arguments:
-            - reader -- wrapped asyncio.StreamReader
-            - output -- stream to echo to (default: sys.stdout)
-            - header_color -- colored.fg compatible color
-            - data_color -- colored.fg compatible color
-        """
-        super().__init__(writer, output)
-        self._header_color = header_color
-        self._data_color = data_color
-    def echo_function(self, attr, *args, **kwargs):
-        if self._header_color is not None:
-            attr = colored.stylize(attr, colored.fg(self._header_color))
-        if self._data_color is not None and len(args) >= 1:
-            colored_arg0 = colored.stylize(args[0], colored.fg(self._data_color))
-            args = (colored_arg0,) + args[1:]
-        self._output.write('%s\n' % format_function_call(attr, *args, **kwargs))
-        self._output.flush()
 
 class OffsetDict(collections.MutableMapping):
     """A mutable mapping of which values have fixed offsets.
