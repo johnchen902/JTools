@@ -113,13 +113,16 @@ async def open_connection(args, logger=None):
     """Open a connection described by args.
 
     Returns a Connection decorated according to args.
-    Such connection is not exactly a (reader, writer) pair,
-    but can be used as:
-
-    >>> reader, writer = await open_connection(args)
     """
 
     reader, writer = await asyncio.open_connection(args.host, args.port)
+
+    old_feed_data = reader.feed_data
+    def _new_feed_data(data):
+        old_feed_data(data)
+        logger.debug('feed_data(%s)', data)
+    reader.feed_data = _new_feed_data
+
     return Connection(reader, writer, logger)
 
 def find_flags(flagdata):
