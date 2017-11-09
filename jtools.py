@@ -17,7 +17,6 @@ import collections
 import logging
 import re
 import sys
-import types
 
 def create_argument_parser(**kwargs):
     """Create an argparse.ArgumentParser whose result can be used by jtools.
@@ -34,20 +33,23 @@ def create_argument_parser(**kwargs):
             Currently the log can only be written to standard error.
             With 'color', the log is colorized.
             With 'color=auto', the log is colorized when output is a terminal.
+            'debug', 'info', 'warning' and 'error' set log level (default: 'info').
         """)
     return parser
 
 class HandlerConfig:
     """Data struture used by --log"""
-    def __init__(self, *, color='never'):
+    def __init__(self, *, color='never', level=logging.INFO):
         self.color = color
+        self.level = level
     def __repr__(self):
-        return 'HandlerConfig(color=%r)' % (self.color,)
+        return 'HandlerConfig(color=%r,level=%r)' % (self.color, self.level)
     def create_handler(self):
         """Create a logging.Handler as specified"""
         handler = logging.StreamHandler()
         if self.should_colorize():
             handler.addFilter(color_filter)
+        handler.setLevel(self.level)
         return handler
     def should_colorize(self):
         """Determine if we should colorize the output"""
@@ -74,6 +76,8 @@ def parse_log_handler(argstr):
             if value not in ['always', 'auto', 'never']:
                 raise argparse.ArgumentTypeError('invalid color value: %r' % value)
             result.color = value
+        elif key in ['debug', 'info', 'warning', 'error']:
+            result.level = getattr(logging, key.upper())
         else:
             raise argparse.ArgumentTypeError('unrecognized subargument: %r' % key)
     return result
@@ -115,9 +119,6 @@ async def open_connection(args, logger=None):
     >>> reader, writer = await open_connection(args)
     """
 
-    if logger is None:
-        logger = types.SimpleNamespace(debug=lambda *args, **kwargs: None)
-
     reader, writer = await asyncio.open_connection(args.host, args.port)
     return Connection(reader, writer, logger)
 
@@ -137,37 +138,40 @@ class Connection:
     def __iter__(self):
         yield self.reader
         yield self.writer
+    def _info(self, *args, **kwargs):
+        if self.logger is not None:
+            self.logger.info(*args, **kwargs)
     async def read(self, n=-1):
         """See `asyncio.StreamerReader.read`"""
         result = await self.reader.read(n)
-        self.logger.debug('read(%d) = %s', n, result)
+        self._info('read(%d) = %s', n, result)
         return result
     async def readline(self):
         """See `asyncio.StreamerReader.readline`"""
         result = await self.reader.readline()
-        self.logger.debug('readline() = %s', result)
+        self._info('readline() = %s', result)
         return result
     async def readexactly(self, n):
         """See `asyncio.StreamerReader.readexactly`"""
         result = await self.reader.readexactly(n)
-        self.logger.debug('readexactly(%d) = %d', n, result)
+        self._info('readexactly(%d) = %d', n, result)
         return result
     async def readuntil(self, separator=b'\n'):
         """See `asyncio.StreamerReader.readuntil`"""
         result = await self.reader.readuntil(separator)
-        self.logger.debug('readuntil(%s) = %s', separator, result)
+        self._info('readuntil(%s) = %s', separator, result)
         return result
     def write(self, data):
         """See `asyncio.StreamerWriter.write`"""
-        self.logger.debug('write(%s)', data)
+        self._info('write(%s)', data)
         self.writer.write(data)
     def writelines(self, data):
         """See `asyncio.StreamerWriter.writelines`"""
-        self.logger.debug('writelines(%s)', data)
+        self._info('writelines(%s)', data)
         self.writer.writelines(data)
     def write_eof(self):
         """See `asyncio.StreamerWriter.write_eof`"""
-        self.logger.debug('write_eof()')
+        self._info('write_eof()')
         self.writer.write_eof()
 
 class OffsetDict(collections.MutableMapping):
