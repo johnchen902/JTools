@@ -3,6 +3,7 @@
 
 __all__ = [
     'create_argument_parser',
+    'HandlerConfig',
     'find_flags',
     'create_logger',
     'open_connection',
@@ -27,24 +28,55 @@ def create_argument_parser(**kwargs):
     parser.add_argument('host')
     parser.add_argument('port', type=int)
     parser.add_argument(
-        '-v', '--verbose', action='store_true',
-        help='log data sent and received')
-    parser.add_argument(
-        '--color', metavar='WHEN', choices=['always', 'auto', 'never'],
-        nargs='?', default='never', const='always',
-        help="""colorize the output;
-                WHEN can be 'always' (default if omitted), 'auto', or 'never'""")
+        '--log', metavar='LOG', action='append', type=parse_log_handler,
+        nargs='?', const='', dest='log_handlers',
+        help="""add a logging handler; The LOG argument is a comma-seperated list.
+            Currently the log can only be written to standard error.
+            With 'color', the log is colorized.
+            With 'color=auto', the log is colorized when output is a terminal.
+        """)
     return parser
 
-def should_colorize(args):
-    """Determine if we should colorize the output"""
-    if args.color == 'always':
-        return True
-    if args.color == 'never':
-        return False
-    if args.color == 'auto':
-        return sys.stdout.isatty()
-    raise ValueError('Bad args.color')
+class HandlerConfig:
+    """Data struture used by --log"""
+    def __init__(self, *, color='never'):
+        self.color = color
+    def __repr__(self):
+        return 'HandlerConfig(color=%r)' % (self.color,)
+    def create_handler(self):
+        """Create a logging.Handler as specified"""
+        handler = logging.StreamHandler()
+        if self.should_colorize():
+            handler.addFilter(color_filter)
+        return handler
+    def should_colorize(self):
+        """Determine if we should colorize the output"""
+        if self.color == 'always':
+            return True
+        if self.color == 'never':
+            return False
+        if self.color == 'auto':
+            return sys.stderr.isatty()
+        raise ValueError('Bad color')
+
+def parse_log_handler(argstr):
+    """internal method that obviously parse --log"""
+    result = HandlerConfig()
+    for key in argstr.split(','):
+        if not key:
+            continue
+        value = None
+        if '=' in key:
+            key, value = key.split('=', 1)
+        if key == 'color':
+            if value is None:
+                value = 'always'
+            if value not in ['always', 'auto', 'never']:
+                raise argparse.ArgumentTypeError('invalid color value: %r' % value)
+            result.color = value
+        else:
+            raise argparse.ArgumentTypeError('unrecognized subargument: %r' % key)
+    return result
 
 REGEX_READ = re.compile('(read.* = )%s')
 REGEX_WRITE = re.compile(r'(write.*)\((.+)\)')
@@ -66,11 +98,9 @@ def color_filter(record):
 def create_logger(args, name):
     """Create a logger with specified name, and configure it according to args"""
     logger = logging.getLogger(name)
-    if args.verbose:
-        logger.setLevel(logging.DEBUG)
-    logger.addHandler(logging.StreamHandler())
-    if should_colorize(args):
-        logger.addFilter(color_filter)
+    logger.setLevel(logging.DEBUG)
+    for config in args.log_handlers:
+        logger.addHandler(config.create_handler())
     return logger
 
 async def open_connection(args, logger=None):
