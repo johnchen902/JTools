@@ -29,8 +29,8 @@ def create_argument_parser(**kwargs):
     parser.add_argument(
         '--log', metavar='LOG', action='append', type=parse_log_handler,
         nargs='?', const='', dest='log_handlers',
-        help="""add a logging handler; The LOG argument is a comma-seperated list.
-            Currently the log can only be written to standard error.
+        help="""Add a log handler. The LOG argument is a comma-seperated list.
+            Currently, the log can only be written to standard error.
             With 'color', the log is colorized.
             With 'color=auto', the log is colorized when output is a terminal.
             'debug', 'info', 'warning' and 'error' set log level (default: 'info').
