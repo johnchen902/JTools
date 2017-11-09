@@ -99,8 +99,10 @@ def create_logger(args, name):
     """Create a logger with specified name, and configure it according to args"""
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
-    for config in args.log_handlers:
-        logger.addHandler(config.create_handler())
+    # args.log_handlers may be None
+    if args.log_handlers:
+        for config in args.log_handlers:
+            logger.addHandler(config.create_handler())
     return logger
 
 async def open_connection(args, logger=None):
