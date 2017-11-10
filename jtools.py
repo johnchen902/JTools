@@ -34,14 +34,23 @@ def create_argument_parser(**kwargs):
 
 class HandlerConfig:
     """Data struture used by --log"""
-    def __init__(self, *, color='never', level=logging.INFO):
+    def __init__(self, *, filename=None, color='never', level=logging.INFO):
+        self.filename = filename
         self.color = color
         self.level = level
     def __repr__(self):
-        return 'HandlerConfig(color=%r,level=%r)' % (self.color, self.level)
+        arglist = []
+        if self.filename is not None:
+            arglist.append('filename=%r' % self.filename)
+        arglist.append('color=%r' % self.color)
+        arglist.append('level=%r' % self.level)
+        return 'HandlerConfig(%s)' % ', '.join(arglist)
     def create_handler(self):
         """Create a logging.Handler as specified"""
-        handler = logging.StreamHandler()
+        if self.filename is None:
+            handler = logging.StreamHandler()
+        else:
+            handler = logging.FileHandler(self.filename)
         if self.should_colorize():
             # TODO configure ColorFormatter rule
             handler.setFormatter(ColorFormatter())
@@ -54,7 +63,7 @@ class HandlerConfig:
         if self.color == 'never':
             return False
         if self.color == 'auto':
-            return sys.stderr.isatty()
+            return self.filename is None and sys.stderr.isatty()
         raise ValueError('Bad color')
 
 class LogArgumentParser(argparse.ArgumentParser):
@@ -81,6 +90,10 @@ def create_log_parser(parent):
         help="show this help message and exit")
 
     parser.add_argument(
+        '--file',
+        help="write to FILE instead of standard error")
+
+    parser.add_argument(
         '--color', choices=['always', 'auto', 'never'],
         nargs='?', default='never', const='always',
         help="colorize the output")
@@ -100,6 +113,7 @@ def create_log_parser(parent):
         args = parser.parse_args(arglist)
 
         result = HandlerConfig()
+        result.filename = args.file
         result.color = args.color
         result.level = getattr(logging, args.level.upper())
         return result
