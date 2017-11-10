@@ -17,6 +17,7 @@ import collections
 import logging
 import re
 import sys
+import types
 
 def create_argument_parser(**kwargs):
     """Create an argparse.ArgumentParser whose result can be used by jtools.
@@ -32,19 +33,8 @@ def create_argument_parser(**kwargs):
         help="Add a log handler. See `--log help` for detail.")
     return parser
 
-class HandlerConfig:
+class HandlerConfig(types.SimpleNamespace):
     """Data struture used by --log"""
-    def __init__(self, *, filename=None, color='never', level=logging.INFO):
-        self.filename = filename
-        self.color = color
-        self.level = level
-    def __repr__(self):
-        arglist = []
-        if self.filename is not None:
-            arglist.append('filename=%r' % self.filename)
-        arglist.append('color=%r' % self.color)
-        arglist.append('level=%r' % self.level)
-        return 'HandlerConfig(%s)' % ', '.join(arglist)
     def create_handler(self):
         """Create a logging.Handler as specified"""
         if self.filename is None:
@@ -53,7 +43,9 @@ class HandlerConfig:
             handler = logging.FileHandler(self.filename)
         if self.should_colorize():
             # TODO configure ColorFormatter rule
-            handler.setFormatter(ColorFormatter())
+            handler.setFormatter(ColorFormatter(fmt=self.format))
+        else:
+            handler.setFormatter(logging.Formatter(fmt=self.format))
         handler.setLevel(self.level)
         return handler
     def should_colorize(self):
@@ -94,6 +86,10 @@ def create_log_parser(parent):
         help="write to FILE instead of standard error")
 
     parser.add_argument(
+        '--format', default='%(message)s',
+        help="change log format (See logging.Formatter)")
+
+    parser.add_argument(
         '--color', choices=['always', 'auto', 'never'],
         nargs='?', default='never', const='always',
         help="colorize the output")
@@ -114,6 +110,7 @@ def create_log_parser(parent):
 
         result = HandlerConfig()
         result.filename = args.file
+        result.format = args.format
         result.color = args.color
         result.level = getattr(logging, args.level.upper())
         return result
@@ -125,8 +122,8 @@ class ColorFormatter(logging.Formatter):
         (re.compile('(read.* = )(%s)'), '\\1\033[38;5;10m\\2\033[0m'),
         (re.compile(r'(write.*)\((.+)\)'), '\\1(\033[38;5;9m\\2\033[0m)'),
     ]
-    def __init__(self, rules=None):
-        super().__init__()
+    def __init__(self, *, rules=None, **kwargs):
+        super().__init__(**kwargs)
         if rules is None:
             rules = ColorFormatter.DEFAULT_RULES
         self._rules = rules
