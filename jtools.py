@@ -27,14 +27,9 @@ def create_argument_parser(**kwargs):
     parser.add_argument('host')
     parser.add_argument('port', type=int)
     parser.add_argument(
-        '--log', metavar='LOG', action='append', type=parse_log_handler,
+        '--log', metavar='LOG', action='append', type=create_log_parser(parser),
         nargs='?', const='', dest='log_handlers',
-        help="""Add a log handler. The LOG argument is a comma-seperated list.
-            Currently, the log can only be written to standard error.
-            With 'color', the log is colorized.
-            With 'color=auto', the log is colorized when output is a terminal.
-            'debug', 'info', 'warning' and 'error' set log level (default: 'info').
-        """)
+        help="Add a log handler. See `--log help` for detail.")
     return parser
 
 class HandlerConfig:
@@ -62,26 +57,53 @@ class HandlerConfig:
             return sys.stderr.isatty()
         raise ValueError('Bad color')
 
-def parse_log_handler(argstr):
-    """internal method that obviously parse --log"""
-    result = HandlerConfig()
-    for key in argstr.split(','):
-        if not key:
-            continue
-        value = None
-        if '=' in key:
-            key, value = key.split('=', 1)
-        if key == 'color':
-            if value is None:
-                value = 'always'
-            if value not in ['always', 'auto', 'never']:
-                raise argparse.ArgumentTypeError('invalid color value: %r' % value)
-            result.color = value
-        elif key in ['debug', 'info', 'warning', 'error']:
-            result.level = getattr(logging, key.upper())
-        else:
-            raise argparse.ArgumentTypeError('unrecognized subargument: %r' % key)
-    return result
+class LogArgumentParser(argparse.ArgumentParser):
+    """Internal class for parsing --log."""
+    def __init__(self, parent):
+        super().__init__(prog='--log', add_help=False, description="""
+            Contrary to what this help message suggested,
+            --log only accepts comma-separated suboptions.
+            Some suboptions may include an associated value,
+            which is separated from the suboption name by an equal sign.
+            This is an example (and the default): 'color=never,info'.
+        """)
+        self._parent = parent
+    def error(self, message):
+        raise argparse.ArgumentTypeError(message)
+    def exit(self, status=0, message=None):
+        self._parent.exit(status, message)
+
+def create_log_parser(parent):
+    """Internal function for parsing --log; returns str->HandlerConfig"""
+    parser = LogArgumentParser(parent)
+    parser.add_argument(
+        '--help', action='help',
+        help="show this help message and exit")
+
+    parser.add_argument(
+        '--color', choices=['always', 'auto', 'never'],
+        nargs='?', default='never', const='always',
+        help="colorize the output")
+
+    log_levels = ['debug', 'info', 'warning', 'error']
+    levelgroup = parser.add_mutually_exclusive_group()
+    levelgroup.add_argument(
+        '--level', choices=log_levels, default='info',
+        help="set logging level")
+    for level in log_levels:
+        levelgroup.add_argument(
+            '--%s' % level, dest='level', action='store_const', const=level,
+            help="equivalent to --level=%s" % level)
+
+    def _parse_log_handler(argstr):
+        arglist = ['--%s' % s for s in argstr.split(',') if s]
+        args = parser.parse_args(arglist)
+
+        result = HandlerConfig()
+        result.color = args.color
+        result.level = getattr(logging, args.level.upper())
+        return result
+    return _parse_log_handler
 
 class ColorFormatter(logging.Formatter):
     """Formatter supporting --log color"""
