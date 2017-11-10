@@ -48,7 +48,8 @@ class HandlerConfig:
         """Create a logging.Handler as specified"""
         handler = logging.StreamHandler()
         if self.should_colorize():
-            handler.addFilter(color_filter)
+            # TODO configure ColorFormatter rule
+            handler.setFormatter(ColorFormatter())
         handler.setLevel(self.level)
         return handler
     def should_colorize(self):
@@ -82,22 +83,30 @@ def parse_log_handler(argstr):
             raise argparse.ArgumentTypeError('unrecognized subargument: %r' % key)
     return result
 
-REGEX_READ = re.compile('(read.* = )%s')
-REGEX_WRITE = re.compile(r'(write.*)\((.+)\)')
-def msg_color_filter(msg):
-    """filter supporting --color (str to str)"""
-    match = REGEX_READ.fullmatch(msg)
-    if match:
-        # TODO config colors
-        return match.expand('\\1\033[38;5;10m%s\033[0m')
-    match = REGEX_WRITE.fullmatch(msg)
-    if match:
-        return match.expand('\\1(\033[38;5;9m\\2\033[0m)')
-    return msg
-def color_filter(record):
-    """filter supporting --color (logging interface)"""
-    record.msg = msg_color_filter(str(record.msg))
-    return True
+class ColorFormatter(logging.Formatter):
+    """Formatter supporting --log color"""
+    DEFAULT_RULES = [
+        (re.compile('(read.* = )(%s)'), '\\1\033[38;5;10m\\2\033[0m'),
+        (re.compile(r'(write.*)\((.+)\)'), '\\1(\033[38;5;9m\\2\033[0m)'),
+    ]
+    def __init__(self, rules=None):
+        super().__init__()
+        if rules is None:
+            rules = ColorFormatter.DEFAULT_RULES
+        self._rules = rules
+    def format(self, record):
+        old_msg = record.msg
+        record.msg = self._colorize_msg(str(record.msg))
+        try:
+            return super().format(record)
+        finally:
+            record.msg = old_msg
+    def _colorize_msg(self, msg):
+        for pattern, replacement in self._rules:
+            match = pattern.fullmatch(msg)
+            if match:
+                return match.expand(replacement)
+        return msg
 
 def create_logger(args, name):
     """Create a logger with specified name, and configure it according to args"""
