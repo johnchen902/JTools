@@ -199,7 +199,7 @@ class Connection:
     async def readexactly(self, n):
         """See `asyncio.StreamerReader.readexactly`"""
         result = await self.reader.readexactly(n)
-        self._info('readexactly(%d) = %d', n, result)
+        self._info('readexactly(%d) = %s', n, result)
         return result
     async def readuntil(self, separator=b'\n'):
         """See `asyncio.StreamerReader.readuntil`"""
