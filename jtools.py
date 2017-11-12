@@ -3,7 +3,6 @@
 
 __all__ = [
     'create_argument_parser',
-    'HandlerConfig',
     'find_flags',
     'create_logger',
     'open_connection',
@@ -33,30 +32,28 @@ def create_argument_parser(**kwargs):
         help="Add a log handler. See `--log help` for detail.")
     return parser
 
-class HandlerConfig(types.SimpleNamespace):
-    """Data struture used by --log"""
-    def create_handler(self):
-        """Create a logging.Handler as specified"""
-        if self.filename is None:
-            handler = logging.StreamHandler()
-        else:
-            handler = logging.FileHandler(self.filename)
-        if self.should_colorize():
-            # TODO configure ColorFormatter rule
-            handler.setFormatter(ColorFormatter(fmt=self.format))
-        else:
-            handler.setFormatter(logging.Formatter(fmt=self.format))
-        handler.setLevel(self.level)
-        return handler
-    def should_colorize(self):
-        """Determine if we should colorize the output"""
-        if self.color == 'always':
-            return True
-        if self.color == 'never':
-            return False
-        if self.color == 'auto':
-            return self.filename is None and sys.stderr.isatty()
-        raise ValueError('Bad color')
+def create_handler(config):
+    """Create a logging.Handler as specified"""
+    if config.filename is None:
+        handler = logging.StreamHandler()
+    else:
+        handler = logging.FileHandler(config.filename)
+    if should_colorize(config):
+        # TODO configure ColorFormatter rule
+        handler.setFormatter(ColorFormatter(fmt=config.format))
+    else:
+        handler.setFormatter(logging.Formatter(fmt=config.format))
+    handler.setLevel(config.level)
+    return handler
+def should_colorize(config):
+    """Determine if we should colorize the output"""
+    if config.color == 'always':
+        return True
+    if config.color == 'never':
+        return False
+    if config.color == 'auto':
+        return config.filename is None and sys.stderr.isatty()
+    raise ValueError('Bad color')
 
 class LogArgumentParser(argparse.ArgumentParser):
     """Internal class for parsing --log."""
@@ -108,7 +105,7 @@ def create_log_parser(parent):
         arglist = ['--%s' % s for s in argstr.split(',') if s]
         args = parser.parse_args(arglist)
 
-        result = HandlerConfig()
+        result = types.SimpleNamespace()
         result.filename = args.file
         result.format = args.format
         result.color = args.color
@@ -148,7 +145,7 @@ def create_logger(args, name):
     # args.log_handlers may be None
     if args.log_handlers:
         for config in args.log_handlers:
-            logger.addHandler(config.create_handler())
+            logger.addHandler(create_handler(config))
     return logger
 
 async def open_connection(args, logger):
