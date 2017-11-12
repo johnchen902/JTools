@@ -151,11 +151,13 @@ def create_logger(args, name):
             logger.addHandler(config.create_handler())
     return logger
 
-async def open_connection(args, logger=None):
+async def open_connection(args, logger):
     """Open a connection described by args.
 
     Returns a Connection decorated according to args.
     """
+    if not logger:
+        raise ValueError('logger is falsy')
 
     reader, writer = await asyncio.open_connection(args.host, args.port)
 
@@ -184,8 +186,7 @@ class Connection:
         yield self.reader
         yield self.writer
     def _info(self, *args, **kwargs):
-        if self.logger is not None:
-            self.logger.info(*args, **kwargs)
+        self.logger.info(*args, **kwargs)
     async def read(self, n=-1):
         """See `asyncio.StreamerReader.read`"""
         result = await self.reader.read(n)
