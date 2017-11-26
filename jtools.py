@@ -172,6 +172,14 @@ def find_flags(flagdata):
         return re.findall(b'FLAG{[^}]+}', flagdata)
     return re.findall('FLAG{[^}]+}', str(flagdata))
 
+async def copy_forever(input_func, output_func):
+    """Internal function; see implementation"""
+    while True:
+        data = await input_func()
+        if not data:
+            break
+        output_func(data)
+
 class Connection:
     """Returned by open_connection."""
     def __init__(self, reader, writer, logger):
@@ -216,6 +224,25 @@ class Connection:
         """See `asyncio.StreamerWriter.write_eof`"""
         self._debug('write_eof()')
         self.writer.write_eof()
+    async def interact(self, *, pipe_in=sys.stdin, pipe_out=sys.stdout):
+        """Interactive mode.
+
+        It does this two things until either EOF is received.
+        1. Copy data from self.reader to pipe_out.
+        2. Copy data from pipe_in to self.writer.
+        """
+        loop = asyncio.get_event_loop()
+
+        reader = asyncio.StreamReader()
+        await loop.connect_read_pipe(
+            lambda: asyncio.StreamReaderProtocol(reader), pipe_in)
+        transport, _ = await loop.connect_write_pipe(
+            asyncio.BaseProtocol, pipe_out)
+
+        await asyncio.wait({
+            copy_forever(lambda: self.read(8192), transport.write),
+            copy_forever(reader.readline, self.write),
+            }, return_when=asyncio.FIRST_COMPLETED)
 
 class OffsetDict(collections.MutableMapping):
     """A mutable mapping of which values have fixed offsets.
