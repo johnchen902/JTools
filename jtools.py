@@ -182,39 +182,39 @@ class Connection:
     def __iter__(self):
         yield self.reader
         yield self.writer
-    def _info(self, *args, **kwargs):
-        self.logger.info(*args, **kwargs)
+    def _debug(self, *args, **kwargs):
+        self.logger.debug(*args, **kwargs)
     async def read(self, n=-1):
         """See `asyncio.StreamerReader.read`"""
         result = await self.reader.read(n)
-        self._info('read(%d) = %s', n, result)
+        self._debug('read(%d) = %s', n, result)
         return result
     async def readline(self):
         """See `asyncio.StreamerReader.readline`"""
         result = await self.reader.readline()
-        self._info('readline() = %s', result)
+        self._debug('readline() = %s', result)
         return result
     async def readexactly(self, n):
         """See `asyncio.StreamerReader.readexactly`"""
         result = await self.reader.readexactly(n)
-        self._info('readexactly(%d) = %s', n, result)
+        self._debug('readexactly(%d) = %s', n, result)
         return result
     async def readuntil(self, separator=b'\n'):
         """See `asyncio.StreamerReader.readuntil`"""
         result = await self.reader.readuntil(separator)
-        self._info('readuntil(%s) = %s', separator, result)
+        self._debug('readuntil(%s) = %s', separator, result)
         return result
     def write(self, data):
         """See `asyncio.StreamerWriter.write`"""
-        self._info('write(%s)', data)
+        self._debug('write(%s)', data)
         self.writer.write(data)
     def writelines(self, data):
         """See `asyncio.StreamerWriter.writelines`"""
-        self._info('writelines(%s)', data)
+        self._debug('writelines(%s)', data)
         self.writer.writelines(data)
     def write_eof(self):
         """See `asyncio.StreamerWriter.write_eof`"""
-        self._info('write_eof()')
+        self._debug('write_eof()')
         self.writer.write_eof()
 
 class OffsetDict(collections.MutableMapping):
