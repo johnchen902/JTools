@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 setup(
     name="JTools",
-    version="0.4",
+    version="0.5",
     py_modules=['jtools'],
     install_requires=[],
     zip_safe=True,

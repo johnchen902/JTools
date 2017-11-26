@@ -38,22 +38,9 @@ def create_handler(config):
         handler = logging.StreamHandler()
     else:
         handler = logging.FileHandler(config.filename)
-    if should_colorize(config):
-        # TODO configure ColorFormatter rule
-        handler.setFormatter(ColorFormatter(fmt=config.format))
-    else:
-        handler.setFormatter(logging.Formatter(fmt=config.format))
+    handler.setFormatter(logging.Formatter(fmt=config.format))
     handler.setLevel(config.level)
     return handler
-def should_colorize(config):
-    """Determine if we should colorize the output"""
-    if config.color == 'always':
-        return True
-    if config.color == 'never':
-        return False
-    if config.color == 'auto':
-        return config.filename is None and sys.stderr.isatty()
-    raise ValueError('Bad color')
 
 class LogArgumentParser(argparse.ArgumentParser):
     """Internal class for parsing --log."""
@@ -63,7 +50,7 @@ class LogArgumentParser(argparse.ArgumentParser):
             --log only accepts comma-separated suboptions.
             Some suboptions may include an associated value,
             which is separated from the suboption name by an equal sign.
-            This is an example (and the default): 'color=never,info'.
+            This is an example (and the default): 'info'.
         """)
         self._parent = parent
     def error(self, message):
@@ -86,11 +73,6 @@ def create_log_parser(parent):
         '--format', default='%(message)s',
         help="change log format (See logging.Formatter)")
 
-    parser.add_argument(
-        '--color', choices=['always', 'auto', 'never'],
-        nargs='?', default='never', const='always',
-        help="colorize the output")
-
     log_levels = ['debug', 'info', 'warning', 'error']
     levelgroup = parser.add_mutually_exclusive_group()
     levelgroup.add_argument(
@@ -108,35 +90,9 @@ def create_log_parser(parent):
         result = types.SimpleNamespace()
         result.filename = args.file
         result.format = args.format
-        result.color = args.color
         result.level = getattr(logging, args.level.upper())
         return result
     return _parse_log_handler
-
-class ColorFormatter(logging.Formatter):
-    """Formatter supporting --log color"""
-    DEFAULT_RULES = [
-        (re.compile('(read.* = )(%s)'), '\\1\033[38;5;10m\\2\033[0m'),
-        (re.compile(r'(write.*)\((.+)\)'), '\\1(\033[38;5;9m\\2\033[0m)'),
-    ]
-    def __init__(self, *, rules=None, **kwargs):
-        super().__init__(**kwargs)
-        if rules is None:
-            rules = ColorFormatter.DEFAULT_RULES
-        self._rules = rules
-    def format(self, record):
-        old_msg = record.msg
-        record.msg = self._colorize_msg(str(record.msg))
-        try:
-            return super().format(record)
-        finally:
-            record.msg = old_msg
-    def _colorize_msg(self, msg):
-        for pattern, replacement in self._rules:
-            match = pattern.fullmatch(msg)
-            if match:
-                return match.expand(replacement)
-        return msg
 
 def create_logger(args, name):
     """Create a logger with specified name, and configure it according to args"""
