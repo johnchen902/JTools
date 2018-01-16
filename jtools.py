@@ -3,7 +3,6 @@
 
 __all__ = [
     'create_argument_parser',
-    'find_flags',
     'create_logger',
     'open_connection',
     'Connection',
@@ -121,12 +120,6 @@ async def open_connection(args, logger):
     reader.feed_data = _new_feed_data
 
     return Connection(reader, writer, logger)
-
-def find_flags(flagdata):
-    """Returns flags of form FLAG{[^}]+} found in flagdata."""
-    if isinstance(flagdata, bytes):
-        return re.findall(b'FLAG{[^}]+}', flagdata)
-    return re.findall('FLAG{[^}]+}', str(flagdata))
 
 async def copy_forever(input_func, output_func):
     """Internal function; see implementation"""
