@@ -85,9 +85,9 @@ class TerminalOutput:
     + Colorize output by events.
     """
 
-    def __init__(self, stream=sys.stderr):
+    def __init__(self, stream=sys.stderr, event_config=None):
         self._stream = stream
-        self.event_config = {}
+        self.event_config = event_config if event_config is not None else {}
         self.indent_str = ' ' * 4
 
     def _fit_line(self, message, prefix, suffix):
@@ -118,3 +118,14 @@ class TerminalOutput:
 
         self._stream.write(message + '\n')
         self._stream.flush()
+
+class LoggingOutput:
+    """Output to logging"""
+    def __init__(self, logger, event_config=None, *, default_level=0):
+        self.logger = logger
+        self.event_config = event_config if event_config is not None else {}
+        self.default_level = default_level
+    def __call__(self, fields, event, msg, *args):
+        config = self.event_config.get(event, {})
+        level = config.get('level', self.default_level)
+        self.logger.log(level, msg, *args, extra=fields)

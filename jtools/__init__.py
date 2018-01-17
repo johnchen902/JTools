@@ -14,6 +14,7 @@ import argparse
 import ast
 import asyncio
 import collections
+import logging
 import re
 import sys
 import types
@@ -31,37 +32,39 @@ def argparse_update_config(parser, namespace, dest, new):
     setattr(namespace, dest, final)
 
 class ASTConfigAction(argparse.Action):
-    def __call__(self, parser, namespace, values, *option_string):
+    """argparse.Action that parse a string with ast.literal_eval
+       and merge resulting dictionary to destination"""
+    def __call__(self, parser, namespace, values, option_string=None):
         argparse_update_config(parser, namespace, self.dest,
                                ast.literal_eval(values))
 
 class YAMLConfigAction(argparse.Action):
-    def __call__(self, parser, namespace, values, *option_string):
+    """argparse.Action that parse a string with yaml.safe_load
+       and merge resulting dictionary to destination"""
+    def __call__(self, parser, namespace, values, option_string=None):
         import yaml
         argparse_update_config(parser, namespace, self.dest,
                                yaml.safe_load(values))
 
-def create_terminal_output(args):
-    """Create a jtools.logger.TerminalOutput described by args"""
-    default_config = {
-        'debug': { 'max_indent': -1 },
-        'info': { 'max_indent': -1, 'level': 'INFO' },
-        'warn': { 'level': 'WARNING' },
-        'error': { 'level': 'ERROR' },
-        'open': { 'max_indent': -1 },
-        'read': { 'max_indent': -1 },
-        'write': { 'max_indent': -1 },
-        'data': { 'max_indent': -1 },
-    }
-
-    output = jlogger.TerminalOutput()
-    output.event_config.update(args.config.get('events', default_config))
-    return output
-
 def create_logger(args):
     """Create a jtools.logger.Logger described by args"""
+    default_config = {
+        'debug': {'max_indent': -1},
+        'info': {'max_indent': -1, 'level': logging.INFO},
+        'warn': {'level': logging.WARNING},
+        'error': {'level': logging.ERROR},
+        'open': {'max_indent': -1},
+        'read': {'max_indent': -1},
+        'write': {'max_indent': -1},
+        'data': {'max_indent': -1},
+    }
+    event_config = args.config.get('events', default_config)
+
     logger = jlogger.Logger()
-    logger.add_output(create_terminal_output(args))
+    logger.add_output(jlogger.TerminalOutput(event_config=event_config))
+    logger.add_output(jlogger.LoggingOutput(logging.getLogger(__name__),
+                                            event_config=event_config,
+                                            default_level=logging.DEBUG))
     logger = logger.with_field('terminal_inhibited', [])
     return logger
 
