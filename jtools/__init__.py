@@ -2,7 +2,8 @@
 """
 
 __all__ = [
-    'create_argument_parser',
+    'ASTConfigAction',
+    'YAMLConfigAction',
     'create_logger',
     'open_connection',
     'Connection',
@@ -10,6 +11,7 @@ __all__ = [
 ]
 
 import argparse
+import ast
 import asyncio
 import collections
 import re
@@ -17,36 +19,43 @@ import sys
 import types
 import jtools.logger as jlogger
 
-def create_argument_parser(**kwargs):
-    """Create an argparse.ArgumentParser whose result can be used by jtools.
+def argparse_update_config(parser, namespace, dest, new):
+    """Internal method for updating config"""
+    old = getattr(namespace, dest, None)
+    if old is None:
+        old = {}
+    try:
+        final = {**old, **new}
+    except TypeError:
+        parser.error("Config must be a mapping, not %s" % type(new).__name__)
+    setattr(namespace, dest, final)
 
-    Arguments are directly forwarded to argparse.ArgumentParser.
-    """
-    parser = argparse.ArgumentParser(**kwargs)
-    parser.add_argument('host')
-    parser.add_argument('port', type=int)
-    return parser
+class ASTConfigAction(argparse.Action):
+    def __call__(self, parser, namespace, values, *option_string):
+        argparse_update_config(parser, namespace, self.dest,
+                               ast.literal_eval(values))
+
+class YAMLConfigAction(argparse.Action):
+    def __call__(self, parser, namespace, values, *option_string):
+        import yaml
+        argparse_update_config(parser, namespace, self.dest,
+                               yaml.safe_load(values))
 
 def create_terminal_output(args):
     """Create a jtools.logger.TerminalOutput described by args"""
+    default_config = {
+        'debug': { 'max_indent': -1 },
+        'info': { 'max_indent': -1, 'level': 'INFO' },
+        'warn': { 'level': 'WARNING' },
+        'error': { 'level': 'ERROR' },
+        'open': { 'max_indent': -1 },
+        'read': { 'max_indent': -1 },
+        'write': { 'max_indent': -1 },
+        'data': { 'max_indent': -1 },
+    }
+
     output = jlogger.TerminalOutput()
-    output.event_config.update({
-        'data': {
-            'max_indent': -1,
-        },
-        'info': {
-            'prefix': '\x1b[38;5;39m',
-            'suffix': '\x1b[m',
-        },
-        'warn': {
-            'prefix': '\x1b[1m\x1b[38;5;11m',
-            'suffix': '\x1b[m',
-        },
-        'error': {
-            'prefix': '\x1b[1m\x1b[38;5;9m',
-            'suffix': '\x1b[m',
-        },
-    })
+    output.event_config.update(args.config.get('events', default_config))
     return output
 
 def create_logger(args):
